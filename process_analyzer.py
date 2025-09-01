@@ -4,6 +4,11 @@ from pm4py.algo.discovery.alpha import algorithm as alpha_miner
 from pm4py.visualization.petri_net import visualizer as pn_visualizer
 from pm4py.objects.petri_net.obj import PetriNet, Marking
 from pm4py.algo.conformance.alignments.petri_net import algorithm as alignments_factory
+from pm4py.algo.analysis.bottleneck import algorithm as bottleneck_analysis
+from bpmn_python.bpmn_diagram_layouter import BPMNVisualLayouter
+from bpmn_python.bpmn_diagram_metrics import BPMNMetrics
+from bpmn_python.bpmn_diagram_properties import BPMNProperties
+from bpmn_python.bpmn_diagram_rep import BPMNDiagram
 
 class ProcessAnalyzer:
     def __init__(self, log_path):
@@ -56,25 +61,103 @@ class ProcessAnalyzer:
         print(f"Traces com fitness perfeito: {num_aligned}/{len(aligned_traces)}")
         return aligned_traces
 
-    def identify_bottlenecks(self, net, initial_marking, final_marking):
-        """Identifica gargalos no processo (exemplo simplificado)."""
-        print("Identificando gargalos (exemplo simplificado)...")
-        # Coletar todas as atividades do log de eventos
-        all_activities = []
-        for trace in self.event_log:
-            for event in trace:
-                all_activities.append(event["concept:name"])
+    def identify_bottlenecks(self):
+        """Identifica gargalos no processo usando o PM4Py."""
+        if self.event_log is None:
+            self.load_and_convert_log()
 
-        activity_counts = pd.Series(all_activities).value_counts()
-        print("Contagem de atividades:", activity_counts)
-        print("Sugestão de otimização: Analisar atividades com alta frequência ou duração para identificar gargalos reais.")
+        print("Identificando gargalos...")
+        # A função bottleneck_analysis.apply espera um event log
+        bottlenecks = bottleneck_analysis.apply(self.event_log)
+
+        bottleneck_info = []
+        if bottlenecks:
+            for activity, metrics in bottlenecks.items():
+                bottleneck_info.append(f"Atividade: {activity}, Tempo Médio de Espera: {metrics.get('avg_waiting_time', 'N/A')}, Tempo Médio de Serviço: {metrics.get('avg_service_time', 'N/A')}")
+        else:
+            bottleneck_info.append("Nenhum gargalo significativo identificado.")
+        return bottleneck_info
+
+    def generate_bpmn_xml(self, net, initial_marking, final_marking, output_path="process_model.bpmn"):
+        """Gera um arquivo BPMN 2.0 XML a partir do modelo de processo."""
+        print(f"Gerando BPMN 2.0 XML e salvando em {output_path}...")
+        
+        bpmn_diagram = BPMNDiagram()
+        process_id = "Process_1"
+        process_name = "Processo Descoberto"
+        bpmn_diagram.add_process_to_diagram(process_id, process_name)
+
+        # Adicionar atividades (tarefas) e gateways
+        # Simplificação: mapear lugares e transições da rede de Petri para elementos BPMN
+        # Isso exigiria um mapeamento mais complexo para um BPMN completo e semanticamente correto
+        # Para este exemplo, vamos criar um fluxo simples baseado nas atividades do log
+
+        activities = self.event_log["concept:name"].unique()
+        for activity in activities:
+            bpmn_diagram.add_task_to_process(process_id, activity, activity)
+
+        # Adicionar um evento de início e fim
+        start_event_id = "StartEvent_1"
+        start_event_name = "Início"
+        bpmn_diagram.add_start_event_to_process(process_id, start_event_id, start_event_name)
+
+        end_event_id = "EndEvent_1"
+        end_event_name = "Fim"
+        bpmn_diagram.add_end_event_to_process(process_id, end_event_id, end_event_name)
+
+        # Conectar eventos e atividades (simplificado)
+        # Isso precisaria de uma lógica mais robusta para conectar corretamente com base no net
+        # Por simplicidade, conectamos o início à primeira atividade e a última atividade ao fim
+        if len(activities) > 0:
+            bpmn_diagram.add_sequence_flow_to_process(process_id, start_event_id, activities[0])
+            for i in range(len(activities) - 1):
+                bpmn_diagram.add_sequence_flow_to_process(process_id, activities[i], activities[i+1])
+            bpmn_diagram.add_sequence_flow_to_process(process_id, activities[-1], end_event_id)
+
+        bpmn_diagram.export_xml_file(output_path)
+        print("BPMN 2.0 XML gerado.")
+
+    def generate_sankhya_flow_script(self, bottlenecks):
+        script_content = "// Script de Automação Sankhya Flow gerado por IA\n\n"
+        script_content += "// Este script pode ser usado para automatizar otimizações de processos identificadas.\n\n"
+
+        if bottlenecks:
+            script_content += "// Gargalos identificados e sugestões de otimização:\n"
+            for bottleneck in bottlenecks:
+                script_content += f"// {bottleneck}\n"
+                if "Atividade: " in bottleneck:
+                    activity_name = bottleneck.split("Atividade: ")[1].split(",")[0].strip()
+                    script_content += f"// Exemplo de automação para a atividade \'{activity_name}\'\n"
+                    script_content += f"// var query = getQuery();\n"
+                    script_content += f"// query.nativeSelect(\"SELECT * FROM TGFTAB WHERE DESCRICAO = \'{activity_name}\'\");\n"
+                    script_content += f"// if (query.next()) {{ \n"
+                    script_content += f"//     mensagem = \'Atividade {activity_name} encontrada. Iniciando otimização...\';\n"
+                    script_content += f"//     // Adicione aqui a lógica de automação específica para a otimização desta atividade\n"
+                    script_content += f"// }} else {{ \n"
+                    script_content += f"//     mostraErro(\'Atividade {activity_name} não encontrada para otimização.\');\n"
+                    script_content += f"// }\n\n"
+        else:
+            script_content += "// Nenhum gargalo significativo identificado para gerar automações.\n"
+
+        script_content += "// Para mais informações sobre as APIs JavaScript do Sankhya, consulte a documentação oficial.\n"
+        return script_content
 
 if __name__ == '__main__':
     analyzer = ProcessAnalyzer(log_path="sankhya_processed_data.csv")
     event_log = analyzer.load_and_convert_log()
     net, initial_marking, final_marking = analyzer.discover_process_model()
     analyzer.visualize_process_model(net, initial_marking, final_marking)
-    aligned_traces = analyzer.analyze_conformance(net, initial_marking, final_marking)
-    analyzer.identify_bottlenecks(net, initial_marking, final_marking)
+    analyzer.generate_bpmn_xml(net, initial_marking, final_marking)
+    # aligned_traces = analyzer.analyze_conformance(net, initial_marking, final_marking)
+    bottlenecks = analyzer.identify_bottlenecks()
+    print("Gargalos identificados:")
+    for b in bottlenecks:
+        print(b)
+
+    sankhya_script = analyzer.generate_sankhya_flow_script(bottlenecks)
+    with open("sankhya_flow_script.js", "w") as f:
+        f.write(sankhya_script)
+    print("Script Sankhya Flow gerado em: sankhya_flow_script.js")
+
 
 
