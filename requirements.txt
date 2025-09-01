@@ -2,7 +2,9 @@ Flask
 pandas
 scikit-learn
 networkx
-pm4py
+pm4py==2.7.17
 requests
 gunicorn
+bpmn-python
+
 
